@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, path::Path, collections::HashMap};
 
 use crate::{
     audio::audio_handler::Audio,
@@ -10,6 +10,7 @@ use crate::{
     },
     parser::map_parser::parse_map,
     render::RendererData,
+    menu::menu_handler::{Actions,parse_action, parse_key},
 };
 
 use super::map::Map;
@@ -18,8 +19,9 @@ use crate::game::damage_calculation::damage_check;
 use crate::game::interactables::InteractableEvent::*;
 use crate::parser::entities_parser::parse_entities;
 use crate::parser::interactables_parser::*;
+
 use crate::parser::player_parser::parse_player_position;
-use minifb::Window;
+use minifb::{Window, Key, KeyRepeat};
 
 const DESPAWN_TIME: i32 = 300;
 const MAP_GRID_CELL_SIZE: f64 = 64.0;
@@ -36,12 +38,16 @@ pub struct Game {
     pub projectile_that_hit: Vec<usize>,
     pub map_index: usize,
     pub last_map_index: usize,
+    pub keybinds: HashMap<Actions, Key>
 }
 
 impl Game {
+
     pub fn new_game(renderer_data: &RendererData) -> Option<Self> {
         let path = Path::new("assets/maps/ggb");
+
         let entries_result = fs::read_dir(path);
+
         let mut entries: Vec<_> = match entries_result {
             Ok(read_dir) => read_dir.filter_map(Result::ok).collect(),
             Err(e) => {
@@ -49,7 +55,9 @@ impl Game {
                 return None;
             }
         };
+
         entries.sort_by_key(|e| e.path());
+
         if let Some(entry) = entries.first() {
             // we initially load the first map
             let path_buf = entry.path();
@@ -61,6 +69,7 @@ impl Game {
                     return None;
                 }
             };
+
             let game = Self {
                 player: Player::new_with_position(
                     parse_player_position(path.to_string(), renderer_data).ok()?,
@@ -73,6 +82,7 @@ impl Game {
                 projectile_that_hit: Vec::new(),
                 map_index: 0,
                 last_map_index: 0,
+                keybinds: Self::load_keybinds_or_default(),
             };
 
             Some(game)
@@ -94,8 +104,10 @@ impl Game {
         self.interactables = interactables;
 
         let mut entity_spawns = Vec::new();
+
         //update player
-        let event = self.player.update(window, &self.map, renderer_data, audio);
+        let event = self.player.update(window, &self.map, renderer_data, audio, &self.keybinds);
+
         //add possible spawn events
         entity_spawns.extend(event);
 
@@ -136,7 +148,34 @@ impl Game {
             }
         }
     }
+
+    
+    pub fn load_keybinds_or_default() -> HashMap<Actions, Key> {
+        let mut keybinds = Self::default_keybinds();
+
+        if let Ok(content) = std::fs::read_to_string("keybinds.txt") {
+            for line in content.lines() {
+                let parts: Vec<&str> = line.split(',').collect();
+                if parts.len() == 2 {
+                    let action_str = parts[0].trim();
+                    let key_str = parts[1].trim();
+
+
+                    if let (Some(action), Some(key)) = (
+                        parse_action(action_str),
+                         parse_key(key_str)) {
+                        keybinds.insert(action, key);
+                    }
+                }
+            }
+        }
+        keybinds
+    }
+
+
+
     pub fn map_swap(&mut self, renderer_data: &RendererData, new_map_index: usize) {
+
         let path = Path::new("assets/maps/ggb");
         let entries_result = fs::read_dir(path);
         let mut entries: Vec<_> = match entries_result {
@@ -182,4 +221,32 @@ impl Game {
             self.map_index = new_map_index;
         }
     }
+
+
+
+    pub fn default_keybinds() -> HashMap<Actions,Key> {
+        let mut h_map = HashMap::new();
+        h_map.insert(Actions::MvForward, Key::W);
+        h_map.insert(Actions::MvBackward, Key::S);
+        h_map.insert(Actions::MvLeft, Key::A);
+        h_map.insert(Actions::MvRight, Key::D);
+        h_map.insert(Actions::Jump, Key::Space);
+        h_map.insert(Actions::RocketJump, Key::R);
+        h_map.insert(Actions::Sprint, Key::LeftShift);
+        h_map.insert(Actions::Crouch, Key::C);
+        h_map.insert(Actions::Interact, Key::F);
+        h_map.insert(Actions::MvCrosshairDown, Key::Down);
+        h_map.insert(Actions::MvCrosshairDown, Key::Up);
+        h_map.insert(Actions::TurnRight, Key::Right);
+        h_map.insert(Actions::TurnLeft, Key::Left);
+        h_map.insert(Actions::FireBullet, Key::RightCtrl);
+        h_map.insert(Actions::FireArrow, Key::RightShift);
+        h_map.insert(Actions::ToggleGodmode, Key::G);
+        h_map.insert(Actions::ToggleFineAim, Key::E);
+        h_map.insert(Actions::LockActiveEnemies, Key::L);
+        h_map.insert(Actions::Exit, Key::Escape);
+
+        h_map
+    }
+   
 }

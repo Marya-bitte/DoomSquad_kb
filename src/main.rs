@@ -7,7 +7,7 @@ mod parser;
 mod render;
 
 use crate::audio::audio_handler::Audio;
-use crate::menu::menu_handler::{AppState, Menu};
+use crate::menu::menu_handler::{AppState, Menu, Actions};
 use crate::render::{RendererData, render_init};
 use minifb::{Key, KeyRepeat, Window, WindowOptions};
 use std::f64::consts::PI;
@@ -55,20 +55,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         SURFACE_DEFAULT_COLOR,
     );
 
-    let mut game = game::Game::new_game(&renderer_data).unwrap();
+    let mut game = game::Game::new_game(&renderer_data).unwrap();  //keybinds alr loaded || defaulted in Game
     let mut audio = Audio::init();
     let mut menu = Menu::new();
 
-    let mut app_state = AppState::StartScreen;
+    let mut app_state = AppState::StartScreen; 
+
 
     while window.is_open() {
+        //hardcoded escape for menus
         let escape_clicked = window.is_key_pressed(Key::Escape, KeyRepeat::No);
 
+        //custom exit binding for gameplay
+        let exit_key = game.keybinds.get(&Actions::Exit).copied().unwrap_or(Key::Escape);
+        let exit_clicked = window.is_key_pressed(exit_key, KeyRepeat::No);
+
         match app_state {
-            AppState::StartScreen => {
+            AppState::StartScreen => { 
                 window.set_cursor_visibility(true);
 
-                if escape_clicked {
+                if escape_clicked { 
                     break;
                 } else {
                     app_state = menu.update_and_draw_start_menu(
@@ -81,10 +87,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            //TO DO: impl logic for menu
+            AppState::ConfigKeys => {
+                window.set_cursor_visibility(true);
+
+                
+                app_state = menu.update_and_draw_key_config_menu(
+                    &mut window, 
+                    &mut buffer,
+                    &mut game,
+                );
+                
+            }
+
+
             AppState::Playing => {
                 window.set_cursor_visibility(false);
 
-                if escape_clicked {
+                if exit_clicked { //impl exit 4 gameplay clicked statt escape
                     app_state = AppState::GamePaused;
                 } else if game.player.hp <= 0.0 {
                     app_state = AppState::GameOver;
@@ -106,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             AppState::GamePaused => {
                 window.set_cursor_visibility(true);
 
-                if escape_clicked {
+                if escape_clicked { 
                     app_state = AppState::StartScreen;
                 } else {
                     app_state = menu.update_and_draw_game_paused(
@@ -121,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             AppState::GameOver => {
                 window.set_cursor_visibility(true);
 
-                if escape_clicked {
+                if escape_clicked { 
                     app_state = AppState::StartScreen;
                 } else {
                     app_state = menu.update_and_draw_game_over(&mut window, &mut buffer, &mut game);
@@ -136,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = window.update_with_buffer(&buffer, SCREEN_WIDTH, SCREEN_HEIGHT) {
             eprintln!("failed to update the window: {e}");
             return Err(Box::new(e));
-        }
+        } 
     }
     Ok(())
 }

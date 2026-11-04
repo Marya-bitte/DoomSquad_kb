@@ -5,7 +5,9 @@
 //! processing mouse clicks, and taking care of saving and loading the player's progress.
 
 use font8x8::{BASIC_FONTS, UnicodeFonts};
+use minifb::Key::Escape;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window};
+use std::collections::{BinaryHeap, HashMap};
 use std::fs;
 
 use crate::audio::audio_handler::Audio;
@@ -31,6 +33,7 @@ pub enum AppState {
     GameOver,
     GamePaused,
     Quit,
+    ConfigKeys,
 }
 
 /// Simple layout container for button definitions.
@@ -42,22 +45,75 @@ struct ButtonDef {
     text: String,
 }
 
+#[derive(Clone,Copy,Debug,Eq, PartialEq, Hash)]
+pub enum Actions {
+	MvForward, 
+	MvBackward,
+	MvLeft,
+	MvRight,
+	Jump,
+	RocketJump,
+	Sprint,
+	Crouch,
+	Interact,
+	MvCrosshairDown,
+	MvCrosshairUp,
+	TurnRight,
+	TurnLeft,
+	FireBullet,
+	FireArrow,
+	ToggleGodmode,
+	ToggleFineAim,
+	LockActiveEnemies,
+	Exit
+}
+
+impl Actions {
+    pub fn actions_display_name(&self) ->&'static str {
+        match self {
+            Actions::MvForward => "MOVE FORWARD",
+			Actions::MvBackward => "MOVE BACKWARD",
+			Actions::MvLeft => "MOVE LEFT",
+			Actions::MvRight => "MOVE RIGHT",
+			Actions::Jump => "JUMP",
+			Actions::RocketJump => "ROCKET JUMP",
+			Actions::Sprint => "SPRINT",
+			Actions::Crouch => "CROUCH",
+			Actions::Interact => "INTERACT",
+			Actions::MvCrosshairDown => "AIM DOWN",
+			Actions::MvCrosshairUp => "AIM UP",
+			Actions::TurnRight => "TURN RIGHT",
+			Actions::TurnLeft => "TURN LEFT",
+			Actions::FireBullet => "SHOOT BULLET",
+			Actions::FireArrow => "SHOOT ARROW",
+			Actions::ToggleGodmode => "GODMODE",
+			Actions::ToggleFineAim => "FINE AIM",
+			Actions::LockActiveEnemies => "LOCK ENEMIES",
+			Actions::Exit => "EXIT",
+        }
+    }
+}
+
+
+
 /// Holds the minimal state required for the IMGUI.
 /// Since `minifb` natively handles keyboard debouncing via `KeyRepeat::No`,
 /// we only need to manually track the mouse state for edge detection (clicks).
 pub struct Menu {
     was_mouse_down: bool,
+    pub active_binding: Option<Actions>,
 }
 
 impl Menu {
     pub fn new() -> Self {
         Self {
             was_mouse_down: false,
+            active_binding: None,
         }
     }
 
     /// Renders the main menu and handles user interactions.
-    pub fn update_and_draw_start_menu(
+    pub fn update_and_draw_start_menu(  //called from main when AppState::StartScreen
         &mut self,
         window: &mut Window,
         buffer: &mut [u32],
@@ -73,6 +129,7 @@ impl Menu {
         let click1 = window.is_key_pressed(Key::Key1, KeyRepeat::No);
         let click2 = window.is_key_pressed(Key::Key2, KeyRepeat::No);
         let click3 = window.is_key_pressed(Key::Key3, KeyRepeat::No);
+        let click4 = window.is_key_pressed(Key::Key4, KeyRepeat::No);
 
         // Render titles
         Self::draw_text_centered(
@@ -80,7 +137,7 @@ impl Menu {
             SCREEN_WIDTH,
             SCREEN_HEIGHT,
             "DOOMSQUAD",
-            50,
+            20,
             6,
             COL_TITLE_RED,
         );
@@ -89,23 +146,28 @@ impl Menu {
             SCREEN_WIDTH,
             SCREEN_HEIGHT,
             "MAIN MENU",
-            105,
+            75,
             2,
             COL_TEXT_WHITE,
         );
 
+        //
+        //
         // Define button layouts
+        //
+        //
         let btn_start = ButtonDef {
-            x: 230,
-            y: 160,
-            w: 340,
+            x: 210,
+            y: 105, //change!!!
+            w: 370, 
             h: 50,
             text: "[1] NEW GAME".to_string(),
         };
+
         let btn_load = ButtonDef {
-            x: 230,
-            y: 230,
-            w: 340,
+            x: 210,
+            y: 175, //change!!!
+            w: 370, 
             h: 50,
             text: "[2] LOAD MAP".to_string(),
         };
@@ -115,25 +177,37 @@ impl Menu {
         } else {
             "[3] SOUND: OFF"
         };
+
         let btn_audio = ButtonDef {
-            x: 230,
-            y: 300,
-            w: 340,
+            x: 210,
+            y: 245, //change!!!
+            w: 370,
             h: 50,
             text: audio_text.to_string(),
         };
 
         let btn_quit = ButtonDef {
-            x: 230,
-            y: 370,
-            w: 340,
+            x: 210,
+            y: 385,  //change!!!
+            w: 370,  
             h: 50,
             text: "[ESC] QUIT GAME".to_string(),
         };
 
-        // Interaction processing
+        //TO DO: change//assign correct values for 
+        let btn_keys = ButtonDef {
+            x : 210,
+            y : 315,  //change!!!
+            w : 370,  
+            h : 50 ,
+            text: "[4] CHANGE KEYBINDS".to_string(),
+        };
+
+        // Interaction processing --> ggf. change AppState to Playing
         if self.draw_flat_button(buffer, &btn_start, mx, my) && clicked || click1 {
+            let saved_keybinds = game.keybinds.clone();
             *game = Game::new_game(renderer_data).unwrap(); // ! this unwrap is intentionally accepted
+            game.keybinds = saved_keybinds;
             game.map_swap(renderer_data, 1); // Jump straight to map 1 (map 0 is reserved for testing)
             return AppState::Playing;
         }
@@ -144,7 +218,9 @@ impl Menu {
             if let Ok(content) = fs::read_to_string("savegame.txt")
                 && let Ok(index) = content.trim().parse::<usize>()
             {
+                let saved_keybinds = game.keybinds.clone();
                 *game = Game::new_game(renderer_data).unwrap(); // ! this unwrap is intentionally accepted
+                game.keybinds= saved_keybinds;
                 game.map_swap(renderer_data, index);
                 return AppState::Playing;
             }
@@ -159,9 +235,155 @@ impl Menu {
             return AppState::Quit;
         }
 
+        //TO DO: Add interaction logic when btn_keys is pressed
+        if self.draw_flat_button(buffer, &btn_keys, mx, my) &&clicked || click4 {
+            //TO DO: Add interaction logic when btn_keys is pressed
+
+
+            return AppState::ConfigKeys;   // Maybe also add main() logic to handle new menu
+        }
+
+
         // Keep looping in the menu until an action changes the state
         AppState::StartScreen
     }
+
+     
+    pub fn update_and_draw_key_config_menu(
+        &mut self,
+        window: &mut Window,
+        buffer: &mut [u32],
+        game: &mut Game,
+		
+    ) -> AppState { 
+        
+        buffer.fill(COL_BG_MAIN);
+
+        let (mx, my, clicked) = self.get_mouse_state(window);
+        let click_esc = window.is_key_pressed(Key::Escape, KeyRepeat::No);
+
+        let was_binding = self.active_binding.is_some();
+		
+
+        Self::draw_text_centered(
+            buffer,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            "CONFIGURE KEY BINDINGS",
+            15,
+            3,
+            COL_TEXT_WHITE,
+        );
+
+        // TO DO: Add btns 4 new key binds
+		let actions: [Actions;19] = [
+			Actions::MvForward,
+			Actions::MvBackward,
+			Actions::MvLeft,
+			Actions::MvRight,
+			Actions::Jump,
+			Actions::RocketJump,
+			Actions::Sprint,
+			Actions::Crouch,
+			Actions::Interact,
+			Actions::MvCrosshairDown,
+			Actions::MvCrosshairUp,
+			Actions::TurnRight,
+			Actions::TurnLeft,
+			Actions::FireBullet,
+			Actions::FireArrow,
+			Actions::ToggleGodmode,
+			Actions::ToggleFineAim,
+			Actions::LockActiveEnemies,
+			Actions::Exit
+		];
+
+		if let Some(target_action) = self.active_binding {
+            Self::draw_text_centered(
+                buffer, 
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT, 
+                &format!("PRESS A KEY FOR \"{}\"", target_action.actions_display_name()), 
+                48, 
+                2, 
+                COL_TITLE_BLUE
+            );
+        
+            //check if user pressed key
+            if let Some(new_key) = window.get_keys_pressed(KeyRepeat::No).first() {
+                game.keybinds.insert(target_action, *new_key);//overwrite old key in HashMap
+
+                //Save binding in config txt
+                let mut content = String::new();
+
+                for (action, key) in &game.keybinds{
+                    content.push_str(&format!("{:?},{:?}\n", action, key));
+                }
+
+                let _ =fs::write("keybinds.txt", content);
+
+                self.active_binding = None;
+    
+            
+            }
+        }
+
+        let w = 230;
+        let h = 36;
+	
+		for (i,action) in actions.iter().enumerate() {
+            //starting coordinates & actions list --> used in for loop
+            let col= i % 3;
+            let row = i/3;
+            
+		    let y = 75 + row *42;
+		    let x= 25 + col * 260;
+		
+			let current_key = game.keybinds.get(action).copied().unwrap_or(Key::Unknown);
+
+			let text = if self.active_binding== Some(*action) {
+                format!("{}: [???]", action.actions_display_name())
+            } else {
+                format!("{}: [{:?}]", action.actions_display_name(), current_key)
+
+            };
+
+            let btn_current_key = ButtonDef {x, y, w, h, text};
+			if self.draw_flat_button_scaled(buffer, &btn_current_key, mx, my, 1) && clicked {
+                self.active_binding = Some(*action);
+	
+			}
+   
+        }
+	
+
+        //back btn interaction
+        let btn_back = ButtonDef {
+            x : 285,
+            y : 375,  //change!!!
+            w : 230,  
+            h : 40 ,
+            text: "<- CLICK TO GO BACK".to_string(),
+        };
+
+        //back btn interaction
+        if self.draw_flat_button_scaled(buffer, &btn_back, mx, my, 1) && clicked 
+        || (click_esc && !was_binding) 
+        { //check if esc returns
+            self.active_binding = None;
+            return AppState::StartScreen;
+        }
+
+        // Keep looping in the key binding menu until an action changes the state
+        AppState::ConfigKeys
+
+ 	}       
+
+        
+
+
+
+
 
     /// Renders the death screen and allows the user to save their current level progress.
     pub fn update_and_draw_game_over(
@@ -192,6 +414,7 @@ impl Menu {
             h: 60,
             text: "[1] SAVE MAP INDEX".to_string(),
         };
+
         let btn_menu = ButtonDef {
             x: 230,
             y: 300,
@@ -213,8 +436,8 @@ impl Menu {
         AppState::GameOver
     }
 
-    /// Renders the pause menu (triggered by pressing ESC during gameplay).
-    pub fn update_and_draw_game_paused(
+    /// Renders the pause menu (triggered by pressing ESC during gameplay). 
+    pub fn update_and_draw_game_paused( //--->>>Change to new key bind
         &mut self,
         window: &mut Window,
         buffer: &mut [u32],
@@ -344,6 +567,45 @@ impl Menu {
         hover
     }
 
+    fn draw_flat_button_scaled(
+        &self,
+        buffer: &mut [u32], 
+        btn : &ButtonDef, 
+        mx: usize, 
+        my: usize, 
+        scale: usize
+    ) -> bool {
+        let hover = mx >= btn.x && mx <= (btn.x + btn.w) && my >= btn.y && my <= (btn.y + btn.h);
+        let bg_color = if hover { COL_BTN_HOVER } else { COL_BTN_NORMAL };
+
+        for row in btn.y..(btn.y + btn.h) {
+            for col in btn.x..(btn.x + btn.w) {
+                if row < SCREEN_HEIGHT && col < SCREEN_WIDTH {
+                    buffer[row * SCREEN_WIDTH + col] = bg_color;
+                }
+            }
+        }
+
+        let text_width = btn.text.len() * 8 * scale;
+        let text_height = 8 * scale;
+        let text_x = btn.x + btn.w.saturating_sub(text_width) / 2;
+        let text_y = btn.y + btn.h.saturating_sub(text_height) / 2;
+
+        Self::draw_text(
+            buffer,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            &btn.text,
+            text_x,
+            text_y,
+            scale,
+            COL_TEXT_WHITE,
+        );
+
+        hover
+
+    }
+
     /// Helper to align a given text string exactly in the horizontal center of the screen.
     fn draw_text_centered(
         buffer: &mut [u32],
@@ -411,5 +673,65 @@ impl Menu {
             // Advance the cursor by the width of the character to prepare for the next letter
             cursor_x += 8 * scale;
         }
+    }
+
+    
+
+}
+
+pub fn parse_action(s: &str) -> Option<Actions> {
+    match s {
+        "MvForward" => Some(Actions::MvForward),
+        "MvBackward" => Some(Actions::MvBackward),
+        "MvLeft" => Some(Actions::MvLeft),
+        "MvRight" => Some(Actions::MvRight),
+        "Jump" => Some(Actions::Jump),
+        "RocketJump" => Some(Actions::RocketJump),
+        "Sprint" => Some(Actions::Sprint),
+        "Crouch" => Some(Actions::Crouch),
+        "Interact" => Some(Actions::Interact),
+        "Sprint" => Some(Actions::Sprint),
+        "MvCrosshairDown" => Some(Actions::MvCrosshairDown),
+        "MvCrosshairUp" => Some(Actions::MvCrosshairUp),
+        "TurnRight" => Some(Actions::TurnRight),
+        "TurnLeft" => Some(Actions::TurnLeft),
+        "FireBullet" => Some(Actions::FireBullet),
+        "FireArrow" => Some(Actions::FireArrow),
+        "ToggleGodmode" => Some(Actions::ToggleGodmode),
+        "ToggleFineAim" => Some(Actions::ToggleFineAim),
+        "LockActiveEnemies" => Some(Actions::LockActiveEnemies),
+        "Exit" => Some(Actions::Exit),
+        _ => None,
+    }
+}
+
+pub fn parse_key(s: &str) -> Option<Key> {
+    match s {
+        // Alphabet
+    "A" => Some(Key::A), "B" => Some(Key::B), "C" => Some(Key::C),
+    "D" => Some(Key::D), "E" => Some(Key::E), "F" => Some(Key::F),
+    "G" => Some(Key::G), "H" => Some(Key::H), "I" => Some(Key::I),
+    "J" => Some(Key::J), "K" => Some(Key::K), "L" => Some(Key::L),
+    "M" => Some(Key::M), "N" => Some(Key::N), "O" => Some(Key::O),
+    "P" => Some(Key::P), "Q" => Some(Key::Q), "R" => Some(Key::R),
+    "S" => Some(Key::S), "T" => Some(Key::T), "U" => Some(Key::U),
+    "V" => Some(Key::V), "W" => Some(Key::W), "X" => Some(Key::X),
+    "Y" => Some(Key::Y), "Z" => Some(Key::Z),
+        
+    // Numbers
+    "Key0" => Some(Key::Key0), "Key1" => Some(Key::Key1), 
+    "Key2" => Some(Key::Key2), "Key3" => Some(Key::Key3), 
+    "Key4" => Some(Key::Key4), "Key5" => Some(Key::Key5), 
+    "Key6" => Some(Key::Key6), "Key7" => Some(Key::Key7), 
+    "Key8" => Some(Key::Key8), "Key9" => Some(Key::Key9),
+        
+    // Modifiers & Specials
+    "Space" => Some(Key::Space), "Escape" => Some(Key::Escape),
+    "Up" => Some(Key::Up), "Down" => Some(Key::Down),
+    "Left" => Some(Key::Left), "Right" => Some(Key::Right),
+    "RightCtrl" => Some(Key::RightCtrl), "LeftCtrl" => Some(Key::LeftCtrl),
+    "RightShift" => Some(Key::RightShift), "LeftShift" => Some(Key::LeftShift),
+    "Enter" => Some(Key::Enter), "Tab" => Some(Key::Tab),
+    _ => None,
     }
 }
